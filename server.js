@@ -7,13 +7,17 @@ import userModel from "./model/User.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { protectedRoute } from "./middleware/protected.js";
-import { transporter } from "./middleware/nodemailer.js";
+import {
+  transporter,
+  emailTemplate,
+  generateOTP,
+} from "./mailer/nodemailer.js";
 dotenv.config();
 
 const app = express();
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: process.env.CLIENT_URL || "http://localhost:5173",
     credentials: true,
   })
 );
@@ -30,8 +34,9 @@ app.post("/login", async (req, res) => {
     if (!user) {
       return res.status(400).json({ message: "User not found" });
     }
-    if (user.password !== password) {
-      return res.status(400).json({ message: "Invalid email or password" });
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      return res.status(400).json({ message: "Invalid credentials" });
     }
     const token = jwt.sign(
       { id: user._id, role: user.role },
@@ -41,7 +46,7 @@ app.post("/login", async (req, res) => {
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      sameSite: "strict",
+      sameSite: process.env.NODE_ENV === "production" ? "None" : "Strict",
       maxAge: 1000 * 60 * 60 * 24,
     });
 
@@ -52,6 +57,7 @@ app.post("/login", async (req, res) => {
         contact: user.contact,
         email: user.email,
         role: user.role,
+        isActivated: user.isActivated,
         company: user.company ? user.company : null,
         company_size: user.company_size ? user.company_size : null,
       },
@@ -59,6 +65,15 @@ app.post("/login", async (req, res) => {
   } catch (error) {
     return res.status(500).json({ message: error.message });
   }
+});
+
+app.get("/logout", (req, res) => {
+  res.clearCookie("token", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "None" : "Strict",
+  });
+  return res.status(200).json({ message: "Logout successful" });
 });
 
 app.get("/users", protectedRoute, async (req, res) => {
@@ -78,9 +93,17 @@ app.get("/users", protectedRoute, async (req, res) => {
 });
 
 app.post("/register", async (req, res) => {
-  const { name, contact, email, company, company_size, password, role } =
-    req.body;
-  if (!name || !contact || !email || !password || !role) {
+  const {
+    name,
+    contact,
+    email,
+    company,
+    company_size,
+    password,
+    role,
+    location,
+  } = req.body;
+  if (!name || !contact || !email || !password || !role || !location) {
     return res.status(400).json({ message: "Please fill all the fields" });
   }
   try {
@@ -92,14 +115,18 @@ app.post("/register", async (req, res) => {
     if (contactExists) {
       return res.status(400).json({ message: "Contact already exists" });
     }
+    const OTP = generateOTP();
     const hashedPassword = await bcrypt.hash(password, 10);
     const user = await userModel.create({
       name,
       contact,
+      location,
       email,
       company,
       company_size,
       password: hashedPassword,
+      OTP: OTP,
+      OTP_expiry: Date.now() + 10 * 60 * 60 * 24 * 3, // 3 days
       role,
     });
     if (!user) {
@@ -110,7 +137,7 @@ app.post("/register", async (req, res) => {
       subject: "Register successful",
       to: user.email,
       text: "You have registered successfully",
-      html: `<h1>Welcome ${user.name}</h1><p>You have registered successfully</p>`,
+      html: emailTemplate(user.name, OTP, 3),
     };
     await transporter.sendMail(emailOption);
     return res.status(201).json({
@@ -119,6 +146,7 @@ app.post("/register", async (req, res) => {
         name: user.name,
         contact: user.contact,
         email: user.email,
+        location: user.location,
         role: user.role,
         company: user.company ? user.company : null,
         company_size: user.company_size ? user.company_size : null,

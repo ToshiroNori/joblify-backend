@@ -58,6 +58,11 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: false,
   },
+  location: {
+    type: String,
+    required: true,
+    trim: true,
+  },
   role: {
     type: String,
     required: true,
