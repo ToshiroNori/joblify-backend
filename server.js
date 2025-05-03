@@ -17,12 +17,39 @@ dotenv.config();
 const app = express();
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin: "http://localhost:5173",
     credentials: true,
   })
 );
 app.use(express.json());
 app.use(cookieParser());
+
+app.get("/authcheck", protectedRoute, async (req, res) => {
+  try {
+    if (!req.user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const user = await userModel.findById(req.user.id);
+    if (!user) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    return res.status(200).json({
+      message: "User authenticated",
+      user: {
+        name: user.name,
+        contact: user.contact,
+        email: user.email,
+        role: user.role,
+        isActivated: user.isActivated,
+        company: user.company ? user.company : null,
+        company_size: user.company_size ? user.company_size : null,
+      },
+    });
+  } catch (error) {
+    return res.status(401).json({ message: "Unauthorized" });
+  }
+});
 
 app.post("/login", async (req, res) => {
   const { email, password } = req.body;
@@ -39,7 +66,7 @@ app.post("/login", async (req, res) => {
       return res.status(400).json({ message: "Invalid credentials" });
     }
     const token = jwt.sign(
-      { id: user._id, role: user.role },
+      { id: user._id, name: user.name, role: user.role },
       process.env.JWT_SECRET,
       { expiresIn: "1d" }
     );
