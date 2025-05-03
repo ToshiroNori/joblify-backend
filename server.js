@@ -127,16 +127,28 @@ app.post("/register", async (req, res) => {
     company,
     company_size,
     password,
+    confirmPassword,
     role,
     location,
   } = req.body;
-  if (!name || !contact || !email || !password || !role || !location) {
+  if (
+    !name ||
+    !contact ||
+    !email ||
+    !password ||
+    !confirmPassword ||
+    !role ||
+    !location
+  ) {
     return res.status(400).json({ message: "Please fill all the fields" });
   }
   try {
     const alreadyExists = await userModel.findOne({ email: email });
     if (alreadyExists) {
       return res.status(400).json({ message: "User already exists" });
+    }
+    if (password !== confirmPassword) {
+      return res.status(400).json({ message: "Passwords do not match" });
     }
     const contactExists = await userModel.findOne({ contact: contact });
     if (contactExists) {
