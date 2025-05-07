@@ -196,6 +196,76 @@ app.post("/register", async (req, res) => {
   }
 });
 
+app.get("/send-otp", protectedRoute, async (req, res) => {
+  try {
+    const user = await userModel
+      .findById(req.user.id)
+      .select("OTP OTP_expiry email name");
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (user.OTP_expiry > Date.now()) {
+      return res.status(400).json({
+        message: "OTP already generated. Please wait for 3 days.",
+      });
+    }
+
+    const OTP = generateOTP();
+    const updatedUser = await userModel.findByIdAndUpdate(
+      req.user.id,
+      {
+        OTP,
+        OTP_expiry: Date.now() + 3 * 24 * 60 * 60 * 1000,
+      },
+      { new: true }
+    );
+
+    const emailOption = {
+      from: `"Daddy's Solution" <${process.env.SMTP_SENDER}>`,
+      subject: "OTP for account verification",
+      to: user.email,
+      text: "Your OTP for account verification",
+      html: emailTemplate(user.name, OTP, 3),
+    };
+
+    await transporter.sendMail(emailOption);
+
+    return res.status(200).json({
+      message: "OTP sent successfully",
+      email: updatedUser.email,
+      OTP: updatedUser.OTP,
+    });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
+app.post("/verify-otp", async (req, res) => {
+  try {
+    const { otp } = req.body;
+    if (!otp) {
+      return res.status(400).json({ message: "Please provide OTP" });
+    }
+    const user = await userModel.findOne({ OTP: otp });
+    if (!user) {
+      return res.status(400).json({ message: "Invalid OTP" });
+    }
+    if (user.OTP_expiry < Date.now()) {
+      return res.status(400).json({ message: "OTP expired" });
+    }
+    await userModel.findByIdAndUpdate(user._id, {
+      isActivated: true,
+      OTP: null,
+      OTP_expiry: null,
+    });
+    return res.status(200).json({ message: "OTP verified successfully" });
+  } catch (err) {
+    return res.status(500).json({ message: err.message });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server is running on port ${PORT}`);
