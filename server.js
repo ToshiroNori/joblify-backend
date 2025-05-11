@@ -17,7 +17,7 @@ dotenv.config();
 const app = express();
 app.use(
   cors({
-    origin: process.env.CLIENT_URL || "http://localhost:5173",
+    origin: process.env.NODE_ENV || "http://localhost:5173",
     credentials: true,
   })
 );
@@ -105,9 +105,9 @@ app.get("/logout", (req, res) => {
 
 app.get("/users", protectedRoute, async (req, res) => {
   try {
-    // if (req.user.role !== "admin") {
-    //   return res.status(403).json({ message: "Forbidden" });
-    // }
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ message: "Forbidden" });
+    }
     const users = await userModel.find();
     if (!users || users.length === 0) {
       return res.status(404).json({ message: "No users found" });
